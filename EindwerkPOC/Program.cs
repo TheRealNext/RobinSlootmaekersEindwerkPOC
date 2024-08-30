@@ -10,53 +10,54 @@ namespace EindwerkPOC
     {
         static async Task Main(string[] args)
         {
-            string localFilePath = "C:\\Users\\sloot\\Downloads\\15mb.xml"; 
-            string remoteFilePath = "/1//Incoming/FTP/15mb.xml"; 
+            string remoteFilePath = "/1//Incoming/FTP/15mb.xml";
             string remoteFilePathSFTP = "../../Incoming/SFTP/15mb.xml";
             string remoteFilePathFTPS = "1/Incoming/FTPS/15mb.xml";
             string server = "4.211.82.81";
-
+            string[] filePaths = {
+                "C:\\Users\\sloot\\Downloads\\1mb.xml",
+                "C:\\Users\\sloot\\Downloads\\5mb.xml",
+                "C:\\Users\\sloot\\Downloads\\15mb.xml",
+                "C:\\Users\\sloot\\Downloads\\30mb.xml"
+            };
             string usernameFTP = "User";
             string passwordFTP = "test";
             string usernameSFTP = "Robin";
             string passwordSFTP = "Password123!";
-            double timeFTP = 0;
-            double timeSFTP = 0;
-            double timeFTPS = 0;
-            double timeHTTPS = 0;
+            double totalFTPTime = 0;
+            double totalSFTPTime = 0;
+            double totalFTPSTime = 0;
+            double totalAS2Time = 0;
 
+            foreach (string localFilePath in filePaths)
+            {
+                double fileFTPTime = 0;
+                double fileSFTPTime = 0;
+                double fileFTPSTime = 0;
+                double fileAS2Time = 0;
 
-            for (int i = 0; i < 10; i++)
-            {
-                timeFTP += TestFtpSpeed(server, usernameFTP, passwordFTP, localFilePath, remoteFilePath);
-                Console.WriteLine("FTP Test: " + (i + 1));
-            }
-            timeFTP /= 10;
+                for (int i = 0; i < 3; i++)
+                {
+                    totalFTPTime += TestFtpSpeed(server, usernameFTP, passwordFTP, localFilePath, remoteFilePath);
+                    Console.WriteLine("FTP Test: " + (i + 1));
+                    totalSFTPTime += TestSftpSpeed(server, usernameSFTP, passwordSFTP, localFilePath, remoteFilePathSFTP);
+                    Console.WriteLine("SFTP Test: " + (i + 1));
+                    totalFTPSTime += TestFtpsSpeed(server, usernameFTP, passwordFTP, localFilePath, remoteFilePathFTPS);
+                    Console.WriteLine("FTPS Test: " + (i + 1));
+                    totalAS2Time += UploadAS2(localFilePath);
+                    Console.WriteLine("AS2 Test: " + (i + 1));
+                }
+                totalFTPTime += fileFTPTime;
+                totalSFTPTime += fileSFTPTime;
+                totalFTPSTime += fileFTPSTime;
+                totalAS2Time += fileAS2Time;
 
-            for (int i = 0; i < 10; i++)
-            {
-                timeSFTP += TestSftpSpeed(server, usernameSFTP, passwordSFTP, localFilePath, remoteFilePathSFTP);
-                Console.WriteLine("SFTP Test: " + (i + 1));
             }
-            timeSFTP /= 10;
-            
-            for (int i = 0; i < 10; i++)
-            {
-                timeFTPS += TestFtpsSpeed(server, usernameFTP, passwordFTP, localFilePath, remoteFilePathFTPS);
-                Console.WriteLine("FTPS Test: " + (i + 1));
-            }
-            timeFTPS /= 10;
-           
-            for (int i = 0; i < 10; i++)
-            {
-                timeHTTPS += await UploadHTTPS("C:\\Users\\sloot\\Downloads\\15mb.xml");
-                Console.WriteLine("HTTPS Test: " + (i + 1));
-            }
-            timeHTTPS /= 10;
-            Console.WriteLine("Average time in ms for FTP " + timeFTP);
-            Console.WriteLine("Average time in ms for SFTP " + timeSFTP);
-            Console.WriteLine("Average time in ms for FTPS " + timeFTPS);
-            Console.WriteLine("Average time in ms for HTTPS " + timeHTTPS);
+
+            Console.WriteLine(" time in ms for FTP " + totalFTPTime);
+            Console.WriteLine(" time in ms for SFTP " + totalSFTPTime);
+            Console.WriteLine(" time in ms for FTPS " + totalFTPSTime);
+            Console.WriteLine(" time in ms for AS2 " + totalAS2Time);
         }
 
         static double TestFtpSpeed(string server, string usernameFTP, string passwordFTP, string localFilePath, string remoteFilePath)
@@ -173,6 +174,60 @@ namespace EindwerkPOC
                     }
                 }
                 return time;
+            }
+        }
+        public static double UploadAS2(string filePath)
+        {
+            if (!File.Exists(filePath))
+            {
+                throw new FileNotFoundException("The file does not exist.", filePath);
+            }
+
+            string url = "http://4.211.82.81:8080/as2/HttpReceiver"; // AS2 server URL
+            string as2To = "mycompanyAS2"; // Replace with actual AS2-To ID
+            string as2From = "as2test"; // Replace with actual AS2-From ID
+            string messageId = Guid.NewGuid().ToString();
+
+            using (var client = new HttpClient())
+            {
+                client.DefaultRequestHeaders.Add("AS2-To", as2To);
+                client.DefaultRequestHeaders.Add("AS2-From", as2From);
+                client.DefaultRequestHeaders.Add("Message-ID", messageId);
+
+                using (var form = new MultipartFormDataContent())
+                {
+                    byte[] fileBytes = File.ReadAllBytes(filePath); // Synchronous file read
+
+                    var fileContent = new ByteArrayContent(fileBytes)
+                    {
+                        Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/xml") }
+                    };
+
+                    form.Add(fileContent, "file", Path.GetFileName(filePath));
+
+                    var stopwatch = Stopwatch.StartNew();
+
+                    try
+                    {
+                        HttpResponseMessage response = client.PostAsync(url, form).Result; // Synchronous wait
+                        response.EnsureSuccessStatusCode();
+
+                        var responseContent = response.Content.ReadAsStringAsync().Result; // Synchronous wait
+
+                        stopwatch.Stop();
+
+                        Console.WriteLine("AS2 Upload successful.");
+                        Console.WriteLine($"Upload complete. Time taken: {stopwatch.Elapsed.TotalSeconds:F2} seconds");
+
+                        return stopwatch.Elapsed.TotalMilliseconds;
+                    }
+                    catch (HttpRequestException e)
+                    {
+                        Console.WriteLine("An error occurred while uploading the file.");
+                        Console.WriteLine(e.Message);
+                        return 0; // Or handle it as needed
+                    }
+                }
             }
         }
     }
